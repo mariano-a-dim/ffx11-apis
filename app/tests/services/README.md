@@ -17,7 +17,7 @@ services/
 
 ### Ejecutar todos los tests de servicios
 ```bash
-# Desde el directorio backend/
+# Desde el directorio raíz del proyecto
 pytest app/tests/services/ -v
 ```
 

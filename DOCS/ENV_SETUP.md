@@ -4,7 +4,7 @@ Este documento describe todas las variables de entorno necesarias para ejecutar 
 
 ## Archivo `.env`
 
-Crea un archivo `.env` en el directorio `backend/` con las siguientes variables:
+Crea un archivo `.env` en el directorio raíz del proyecto con las siguientes variables:
 
 ```env
 # =============================================================================

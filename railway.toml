@@ -1,0 +1,8 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/api/v1/utils/health-check/"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"

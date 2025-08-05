@@ -13,7 +13,7 @@ Start the local development environment with Docker Compose following the guide 
 
 By default, the dependencies are managed with [uv](https://docs.astral.sh/uv/), go there and install it.
 
-From `./backend/` you can install all the dependencies with:
+From the root directory you can install all the dependencies with:
 
 ```console
 $ uv sync
@@ -25,9 +25,9 @@ Then you can activate the virtual environment with:
 $ source .venv/bin/activate
 ```
 
-Make sure your editor is using the correct Python virtual environment, with the interpreter at `backend/.venv/bin/python`.
+Make sure your editor is using the correct Python virtual environment, with the interpreter at `.venv/bin/python`.
 
-Modify or add SQLModel models for data and SQL tables in `./backend/app/models.py`, API endpoints in `./backend/app/api/`, CRUD (Create, Read, Update, Delete) utils in `./backend/app/crud.py`.
+Modify or add SQLModel models for data and SQL tables in `./app/models.py`, API endpoints in `./app/api/`, CRUD (Create, Read, Update, Delete) utils in `./app/crud.py`.
 
 ## VS Code
 
@@ -97,7 +97,7 @@ To test the backend run:
 $ bash ./scripts/test.sh
 ```
 
-The tests run with Pytest, modify and add tests to `./backend/app/tests/`.
+The tests run with Pytest, modify and add tests to `./app/tests/`.
 
 If you use GitHub Actions the tests will run automatically.
 
@@ -133,7 +133,7 @@ Make sure you create a "revision" of your models and that you "upgrade" your dat
 $ docker compose exec backend bash
 ```
 
-* Alembic is already configured to import your SQLModel models from `./backend/app/models.py`.
+* Alembic is already configured to import your SQLModel models from `./app/models.py`.
 
 * After changing a model (for example, adding a column), inside the container, create a revision, e.g.:
 
@@ -149,7 +149,7 @@ $ alembic revision --autogenerate -m "Add column last_name to User model"
 $ alembic upgrade head
 ```
 
-If you don't want to use migrations at all, uncomment the lines in the file at `./backend/app/core/db.py` that end in:
+If you don't want to use migrations at all, uncomment the lines in the file at `./app/core/db.py` that end in:
 
 ```python
 SQLModel.metadata.create_all(engine)
@@ -161,11 +161,11 @@ and comment the line in the file `scripts/prestart.sh` that contains:
 $ alembic upgrade head
 ```
 
-If you don't want to start with the default models and want to remove them / modify them, from the beginning, without having any previous revision, you can remove the revision files (`.py` Python files) under `./backend/app/alembic/versions/`. And then create a first migration as described above.
+If you don't want to start with the default models and want to remove them / modify them, from the beginning, without having any previous revision, you can remove the revision files (`.py` Python files) under `./app/alembic/versions/`. And then create a first migration as described above.
 
 ## Email Templates
 
-The email templates are in `./backend/app/email-templates/`. Here, there are two directories: `build` and `src`. The `src` directory contains the source files that are used to build the final email templates. The `build` directory contains the final email templates that are used by the application.
+The email templates are in `./app/email-templates/`. Here, there are two directories: `build` and `src`. The `src` directory contains the source files that are used to build the final email templates. The `build` directory contains the final email templates that are used by the application.
 
 Before continuing, ensure you have the [MJML extension](https://marketplace.visualstudio.com/items?itemName=attilabuti.vscode-mjml) installed in your VS Code.
 

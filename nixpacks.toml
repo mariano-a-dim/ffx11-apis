@@ -1,5 +1,0 @@
-[build]
-builder = "NIXPACKS"  # Railway usa Nixpacks por defecto para construir aplicaciones Python
-
-[healthcheck]
-path = "/health" 

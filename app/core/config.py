@@ -26,8 +26,8 @@ def parse_cors(v: Any) -> list[str] | str:
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        # Use top level .env file (one level above ./backend/)
-        env_file="../.env",
+        # Use .env file in the root directory
+        env_file=".env",
         env_ignore_empty=True,
         extra="ignore",
     )
@@ -39,13 +39,19 @@ class Settings(BaseSettings):
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
     
     # Railway specific configuration
-    RAILWAY_ENVIRONMENT: bool = False
+    RAILWAY_ENVIRONMENT: str | None = None
     RAILWAY_STATIC_URL: str | None = None
     PORT: int = 8000
 
     BACKEND_CORS_ORIGINS: Annotated[
         list[AnyUrl] | str, BeforeValidator(parse_cors)
     ] = []
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_railway_environment(self) -> bool:
+        """Check if running in Railway environment"""
+        return self.RAILWAY_ENVIRONMENT is not None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
