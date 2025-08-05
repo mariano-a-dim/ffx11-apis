@@ -13,7 +13,7 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/channel-bot", tags=["channel-bot"])
+router = APIRouter(prefix="/slack/channel-bot", tags=["channel-bot"])
 
 
 def verify_slack_signature(request: Request, body: str) -> bool:

@@ -33,6 +33,7 @@ class ChannelBotService:
             user_id = event.get("user")
             text = event.get("text", "")
             timestamp = event.get("ts")
+            message_id = event.get("client_msg_id") or timestamp
             
             # Ignorar mensajes del propio bot
             if event.get("bot_id"):
@@ -40,6 +41,13 @@ class ChannelBotService:
             
             # Ignorar mensajes de subclases (ediciones, eliminaciones, etc.)
             if event.get("subtype"):
+                return
+            
+            # Verificar si ya respondimos a este mensaje
+            if await self._has_already_responded(channel_id, message_id):
+                logger.info("Already responded to this message", 
+                           channel_id=channel_id,
+                           message_id=message_id)
                 return
             
             logger.info("Processing channel message", 
@@ -66,6 +74,8 @@ class ChannelBotService:
             
             if response:
                 await self.send_channel_message(channel_id, response, relevant_specialist.name)
+                # Marcar que ya respondimos a este mensaje
+                await self._mark_as_responded(channel_id, message_id)
             
         except Exception as e:
             logger.error(f"Error handling channel message: {e}")
@@ -78,11 +88,19 @@ class ChannelBotService:
             channel_id = event.get("channel")
             user_id = event.get("user")
             text = event.get("text", "")
+            message_id = event.get("client_msg_id") or event.get("ts")
             
             logger.info("Processing app mention", 
                        channel_id=channel_id,
                        user_id=user_id,
                        text=text)
+            
+            # Verificar si ya respondimos a este mensaje
+            if await self._has_already_responded(channel_id, message_id):
+                logger.info("Already responded to this mention", 
+                           channel_id=channel_id,
+                           message_id=message_id)
+                return
             
             # Remover la mención del bot del texto
             cleaned_text = self._remove_bot_mention(text)
@@ -97,20 +115,21 @@ class ChannelBotService:
                 )
                 return
             
-            # Si hay múltiples especialistas, preguntar cuál usar
-            if len(specialists) > 1:
-                response = self._create_specialist_selection_message(specialists, cleaned_text)
-                await self.send_channel_message(channel_id, response, "Bot")
-                return
+            # Seleccionar el especialista más relevante automáticamente
+            relevant_specialist = await self.select_relevant_specialist(cleaned_text, specialists)
+            if not relevant_specialist:
+                # Si no encuentra especialista relevante, usar el primero
+                relevant_specialist = specialists[0]
             
-            # Si hay solo un especialista, usarlo directamente
-            specialist = specialists[0]
+            # Generar respuesta del especialista seleccionado
             response = await self.generate_specialist_response(
-                cleaned_text, specialist, channel_id, user_id
+                cleaned_text, relevant_specialist, channel_id, user_id
             )
             
             if response:
-                await self.send_channel_message(channel_id, response, specialist.name)
+                await self.send_channel_message(channel_id, response, relevant_specialist.name)
+                # Marcar que ya respondimos a este mensaje
+                await self._mark_as_responded(channel_id, message_id)
             
         except Exception as e:
             logger.error(f"Error handling app mention: {e}")
@@ -164,7 +183,7 @@ class ChannelBotService:
             """
             
             # Usar AI para analizar
-            response = await self.ai_service.generate_response(analysis_prompt)
+            response = self.ai_service.generate_response(analysis_prompt)
             selected_name = response.strip().lower()
             
             # Encontrar el especialista seleccionado
@@ -181,25 +200,76 @@ class ChannelBotService:
     
     async def generate_specialist_response(self, text: str, specialist: ChannelSpecialist, channel_id: str, user_id: str) -> Optional[str]:
         """
-        Genera una respuesta usando el especialista seleccionado.
+        Genera una respuesta usando el especialista seleccionado con memoria del canal.
         """
         try:
+            logger.info("Starting specialist response generation", 
+                       channel_id=channel_id,
+                       specialist=specialist.name,
+                       text_length=len(text))
+            
+            # Obtener memoria del canal
+            memory_context = self.ai_service.get_or_create_channel_memory(channel_id, limit=5)
+            memory = memory_context.get("memory")
+            
+            logger.info("Retrieved memory context", 
+                       channel_id=channel_id,
+                       has_memory=bool(memory),
+                       memory_size=len(memory.chat_memory.messages) if memory else 0)
+            
+            # Crear prompt contextual con memoria
+            memory_text = ""
+            if memory and memory.chat_memory.messages:
+                memory_text = "\n\nContexto de la conversación reciente:\n"
+                for msg in memory.chat_memory.messages[-3:]:  # Últimos 3 mensajes
+                    if hasattr(msg, 'content'):
+                        memory_text += f"- {msg.content}\n"
+            
             # Crear prompt contextual
             prompt = f"""
             {specialist.system_prompt}
             
-            Contexto: Eres {specialist.name} en un canal de Slack. Responde de manera útil y concisa.
+            Contexto: Eres {specialist.name} en un canal de Slack. Responde de manera natural y directa, como lo haría un humano en una conversación casual.
+            
+            Reglas importantes:
+            - NO uses saludos como "¡Hola!" o "Hola"
+            - Responde directamente a la pregunta o comentario
+            - Sé natural y conversacional
+            - No parezcas un bot o asistente
+            - Considera el contexto de la conversación reciente
+            - NO repitas información que ya se mencionó en el contexto
+            {memory_text}
             
             Mensaje del usuario: "{text}"
             
             Responde como {specialist.name}:
             """
             
-            response = await self.ai_service.generate_response(prompt)
+            logger.info("Generated prompt", 
+                       channel_id=channel_id,
+                       prompt_length=len(prompt))
+            
+            response = self.ai_service.generate_response(prompt)
+            
+            logger.info("Generated response", 
+                       channel_id=channel_id,
+                       response_length=len(response) if response else 0)
+            
+            # Actualizar memoria con el nuevo mensaje y respuesta
+            if memory and response:
+                memory.chat_memory.add_user_message(text)
+                memory.chat_memory.add_ai_message(response)
+                logger.info("Updated memory", 
+                           channel_id=channel_id,
+                           new_memory_size=len(memory.chat_memory.messages))
+            
             return response
             
         except Exception as e:
-            logger.error(f"Error generating specialist response: {e}")
+            logger.error(f"Error generating specialist response: {e}", 
+                        channel_id=channel_id,
+                        specialist=specialist.name,
+                        error=str(e))
             return None
     
     async def send_channel_message(self, channel_id: str, text: str, specialist_name: str) -> bool:
@@ -216,7 +286,7 @@ class ChannelBotService:
                     },
                     json={
                         "channel": channel_id,
-                        "text": f"*{specialist_name}:* {text}",
+                        "text": text,
                         "username": specialist_name,
                         "icon_emoji": ":robot_face:"
                     }
@@ -266,20 +336,6 @@ class ChannelBotService:
         import re
         return re.sub(r'<@[A-Z0-9]+>', '', text).strip()
     
-    def _create_specialist_selection_message(self, specialists: List[ChannelSpecialist], text: str) -> str:
-        """
-        Crea un mensaje para que el usuario seleccione un especialista.
-        """
-        message = f"Veo que preguntaste sobre: \"{text}\"\n\n"
-        message += "Tengo varios especialistas que pueden ayudarte:\n\n"
-        
-        for i, specialist in enumerate(specialists, 1):
-            message += f"{i}. *{specialist.name}*: {specialist.description}\n"
-        
-        message += "\nMenciona al bot con el número del especialista que prefieres."
-        
-        return message
-    
     def _format_specialists_for_analysis(self, specialists: List[ChannelSpecialist]) -> str:
         """
         Formatea los especialistas para el análisis de AI.
@@ -288,4 +344,51 @@ class ChannelBotService:
         for specialist in specialists:
             keywords = ", ".join(specialist.expertise_keywords)
             formatted += f"- {specialist.name}: {specialist.description} (keywords: {keywords})\n"
-        return formatted 
+        return formatted
+    
+    async def _has_already_responded(self, channel_id: str, message_id: str) -> bool:
+        """
+        Verifica si ya respondimos a este mensaje específico.
+        """
+        try:
+            # TODO: Implementar verificación en base de datos
+            # Por ahora, usar un cache simple en memoria
+            cache_key = f"{channel_id}:{message_id}"
+            
+            # Verificar si ya procesamos este mensaje
+            if hasattr(self, '_processed_messages'):
+                if cache_key in self._processed_messages:
+                    return True
+            else:
+                self._processed_messages = set()
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error checking if already responded: {e}")
+            return False
+    
+    async def _mark_as_responded(self, channel_id: str, message_id: str) -> None:
+        """
+        Marca que ya respondimos a este mensaje.
+        """
+        try:
+            cache_key = f"{channel_id}:{message_id}"
+            
+            if not hasattr(self, '_processed_messages'):
+                self._processed_messages = set()
+            
+            self._processed_messages.add(cache_key)
+            
+            # Limpiar cache antiguo (mantener solo últimos 100 mensajes)
+            if len(self._processed_messages) > 100:
+                # Convertir a lista y tomar los últimos 100
+                messages_list = list(self._processed_messages)
+                self._processed_messages = set(messages_list[-100:])
+            
+            logger.info("Marked message as responded", 
+                       channel_id=channel_id,
+                       message_id=message_id)
+            
+        except Exception as e:
+            logger.error(f"Error marking message as responded: {e}") 

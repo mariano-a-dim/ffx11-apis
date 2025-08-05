@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional, List, TypedDict
 from sqlmodel import Session
 import json
 import random
+from datetime import datetime
 
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
@@ -756,6 +757,22 @@ class AIService(LoggerMixin):
             self.logger.error("Error getting response", error=str(e))
             return None
     
+    def generate_response(self, prompt: str) -> str:
+        """
+        Genera una respuesta simple para un prompt dado.
+        Método simplificado para uso directo sin el workflow completo.
+        """
+        try:
+            if not self.llm:
+                return "Lo siento, el servicio de IA no está configurado."
+            
+            response = self.llm.invoke([HumanMessage(content=prompt)])
+            return response.content
+            
+        except Exception as e:
+            self.logger.error("Error generating simple response", error=str(e))
+            return f"Error generando respuesta: {str(e)}"
+
     def _create_initial_state(self, message: Dict[str, Any], conversation_context: list[SlackMessage] = None) -> ConversationState:
         """Crea el estado inicial para el workflow"""
         return {
@@ -777,4 +794,134 @@ class AIService(LoggerMixin):
                 "thread_id": f"slack_{message.get('channel', 'unknown')}_{message.get('ts', 'unknown')}",
                 "checkpoint_id": f"msg_{message.get('client_msg_id', message.get('ts', 'unknown'))}"
             }
-        } 
+        }
+    
+    def get_channel_memory_context(self, channel_id: str, limit: int = 10) -> List[SlackMessage]:
+        """
+        Obtiene los últimos N mensajes de un canal específico desde PostgreSQL.
+        Usa la consulta existente del ContextManager.
+        """
+        try:
+            # Usar el ContextManager existente para obtener mensajes
+            context_messages = self.context_manager.get_channel_context(
+                channel_id=channel_id,
+                current_msg_id=None,  # No excluir mensaje actual
+                limit=limit
+            )
+            
+            self.logger.info("Retrieved channel memory context", 
+                           channel_id=channel_id,
+                           message_count=len(context_messages),
+                           limit=limit)
+            
+            return context_messages
+            
+        except Exception as e:
+            self.logger.error("Error getting channel memory context", 
+                            channel_id=channel_id,
+                            error=str(e))
+            return []
+    
+    def create_langchain_memory_for_channel(self, channel_id: str, limit: int = 10) -> Dict[str, Any]:
+        """
+        Crea una memoria específica para un canal usando LangChain.
+        Combina mensajes de PostgreSQL con memoria de LangChain.
+        """
+        try:
+            # Obtener mensajes recientes del canal
+            recent_messages = self.get_channel_memory_context(channel_id, limit)
+            
+            # Crear memoria de LangChain (nueva sintaxis)
+            from langchain_core.memory import BaseMemory
+            from langchain_community.memory import ConversationBufferWindowMemory
+            from langchain_core.messages import HumanMessage, AIMessage
+            
+            # Crear memoria con ventana deslizante
+            memory = ConversationBufferWindowMemory(
+                k=limit,  # Mantener últimos N mensajes
+                return_messages=True,
+                memory_key="chat_history"
+            )
+            
+            # Convertir mensajes de Slack a formato LangChain
+            for msg in recent_messages:
+                if msg.is_bot:
+                    # Mensaje del bot
+                    memory.chat_memory.add_ai_message(msg.text)
+                else:
+                    # Mensaje de usuario
+                    memory.chat_memory.add_user_message(msg.text)
+            
+            # Crear contexto de memoria
+            memory_context = {
+                "memory": memory,
+                "channel_id": channel_id,
+                "message_count": len(recent_messages),
+                "last_updated": datetime.now().isoformat()
+            }
+            
+            self.logger.info("Created LangChain memory for channel", 
+                           channel_id=channel_id,
+                           memory_size=len(memory.chat_memory.messages))
+            
+            return memory_context
+            
+        except Exception as e:
+            self.logger.error("Error creating LangChain memory", 
+                            channel_id=channel_id,
+                            error=str(e))
+            return {
+                "memory": None,
+                "channel_id": channel_id,
+                "message_count": 0,
+                "error": str(e)
+            }
+    
+    def get_or_create_channel_memory(self, channel_id: str, limit: int = 10) -> Dict[str, Any]:
+        """
+        Obtiene o crea memoria para un canal específico.
+        Implementa cache para evitar recrear memoria constantemente.
+        """
+        try:
+            # Cache key para este canal
+            cache_key = f"memory_{channel_id}"
+            
+            # Verificar si ya tenemos memoria en cache
+            if hasattr(self, '_channel_memories'):
+                if cache_key in self._channel_memories:
+                    cached_memory = self._channel_memories[cache_key]
+                    
+                    # Verificar si la memoria es reciente (menos de 5 minutos)
+                    last_updated = datetime.fromisoformat(cached_memory.get("last_updated", "1970-01-01"))
+                    if (datetime.now() - last_updated).seconds < 300:  # 5 minutos
+                        self.logger.info("Using cached memory for channel", 
+                                       channel_id=channel_id)
+                        return cached_memory
+            
+            # Crear nueva memoria
+            memory_context = self.create_langchain_memory_for_channel(channel_id, limit)
+            
+            # Guardar en cache
+            if not hasattr(self, '_channel_memories'):
+                self._channel_memories = {}
+            
+            self._channel_memories[cache_key] = memory_context
+            
+            # Limpiar cache antiguo (mantener solo últimos 50 canales)
+            if len(self._channel_memories) > 50:
+                # Convertir a lista y tomar los últimos 50
+                memories_list = list(self._channel_memories.items())
+                self._channel_memories = dict(memories_list[-50:])
+            
+            return memory_context
+            
+        except Exception as e:
+            self.logger.error("Error getting or creating channel memory", 
+                            channel_id=channel_id,
+                            error=str(e))
+            return {
+                "memory": None,
+                "channel_id": channel_id,
+                "message_count": 0,
+                "error": str(e)
+            } 
