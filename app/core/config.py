@@ -1,3 +1,4 @@
+import os
 import secrets
 import warnings
 from typing import Annotated, Any, Literal
@@ -43,6 +44,32 @@ class Settings(BaseSettings):
     RAILWAY_STATIC_URL: str | None = None
     PORT: int = 8000
 
+    @model_validator(mode="before")
+    @classmethod
+    def validate_railway_environment(cls, values):
+        """Ensure RAILWAY_ENVIRONMENT is treated as string"""
+        print(f"🔍 [DEBUG] validate_railway_environment called with values type: {type(values)}")
+        
+        if isinstance(values, dict):
+            print(f"🔍 [DEBUG] Values keys: {list(values.keys())}")
+            
+            if "RAILWAY_ENVIRONMENT" in values:
+                railway_env = values["RAILWAY_ENVIRONMENT"]
+                print(f"🔍 [DEBUG] RAILWAY_ENVIRONMENT found: {railway_env} (type: {type(railway_env)})")
+                
+                if railway_env is not None:
+                    original_value = railway_env
+                    values["RAILWAY_ENVIRONMENT"] = str(railway_env)
+                    print(f"🔍 [DEBUG] Converted RAILWAY_ENVIRONMENT from {original_value} ({type(original_value)}) to {values['RAILWAY_ENVIRONMENT']} ({type(values['RAILWAY_ENVIRONMENT'])})")
+                else:
+                    print(f"🔍 [DEBUG] RAILWAY_ENVIRONMENT is None, keeping as None")
+            else:
+                print(f"🔍 [DEBUG] RAILWAY_ENVIRONMENT not found in values")
+        else:
+            print(f"🔍 [DEBUG] Values is not a dict, it's: {type(values)}")
+            
+        return values
+
     BACKEND_CORS_ORIGINS: Annotated[
         list[AnyUrl] | str, BeforeValidator(parse_cors)
     ] = []
@@ -51,7 +78,13 @@ class Settings(BaseSettings):
     @property
     def is_railway_environment(self) -> bool:
         """Check if running in Railway environment"""
-        return self.RAILWAY_ENVIRONMENT is not None
+        return self.RAILWAY_ENVIRONMENT is not None and self.RAILWAY_ENVIRONMENT != ""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def railway_environment_name(self) -> str | None:
+        """Get the Railway environment name (e.g., 'production')"""
+        return self.RAILWAY_ENVIRONMENT
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -102,6 +135,8 @@ class Settings(BaseSettings):
         if not self.EMAILS_FROM_NAME:
             self.EMAILS_FROM_NAME = self.PROJECT_NAME
         return self
+
+
 
     EMAIL_RESET_TOKEN_EXPIRE_HOURS: int = 48
 
@@ -161,4 +196,18 @@ class Settings(BaseSettings):
         return self
 
 
-settings = Settings()  # type: ignore
+# Debug: Mostrar variables de entorno relacionadas con Railway
+print("🔍 [DEBUG] Environment variables related to Railway:")
+for key, value in os.environ.items():
+    if 'RAILWAY' in key.upper():
+        print(f"🔍 [DEBUG] {key}: {value} (type: {type(value)})")
+
+print("🔍 [DEBUG] About to create Settings instance...")
+try:
+    settings = Settings()  # type: ignore
+    print("🔍 [DEBUG] Settings instance created successfully")
+    print(f"🔍 [DEBUG] RAILWAY_ENVIRONMENT value: {settings.RAILWAY_ENVIRONMENT} (type: {type(settings.RAILWAY_ENVIRONMENT)})")
+except Exception as e:
+    print(f"🔍 [DEBUG] Error creating Settings: {e}")
+    print(f"🔍 [DEBUG] Error type: {type(e)}")
+    raise

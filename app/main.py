@@ -1,3 +1,4 @@
+import os
 import sentry_sdk
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
@@ -6,6 +7,13 @@ from starlette.middleware.cors import CORSMiddleware
 from app.api.main import api_router
 from app.core.config import settings
 from app.core.logging import get_logger
+
+# Debug: Imprimir variables de entorno
+print("=== ENVIRONMENT VARIABLES ===")
+for key, value in os.environ.items():
+    if any(keyword in key.upper() for keyword in ['PROJECT', 'POSTGRES', 'FIRST', 'RAILWAY']):
+        print(f"{key}: {value}")
+print("============================")
 
 # Inicializar logger
 logger = get_logger(__name__)

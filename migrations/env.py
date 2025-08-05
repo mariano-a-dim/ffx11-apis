@@ -30,6 +30,14 @@ target_metadata = SQLModel.metadata
 
 
 def get_url():
+    # Usar DATABASE_PUBLIC_URL si está disponible (para conexiones externas)
+    # Usar DATABASE_URL si no está disponible (para conexiones internas)
+    database_public_url = os.getenv("DATABASE_PUBLIC_URL")
+    if database_public_url:
+        # Asegurar que use el driver psycopg
+        if database_public_url.startswith("postgresql://"):
+            database_public_url = database_public_url.replace("postgresql://", "postgresql+psycopg://", 1)
+        return database_public_url
     return str(settings.SQLALCHEMY_DATABASE_URI)
 
 
