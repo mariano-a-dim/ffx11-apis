@@ -85,6 +85,12 @@ async def channel_bot_events(request: Request, session: Session = Depends(get_db
                        channel_id=event.get("channel"),
                        user_id=event.get("user"))
             
+            if 'X-Slack-Retry-Num' in request.headers:
+                logger.info("Slack retry detected", retry_num=request.headers['X-Slack-Retry-Num'])                
+                retry_num = int(request.headers['X-Slack-Retry-Num'])
+                if retry_num >= 1:
+                    return {"status": "ok"}
+            
             # Crear servicio del bot del canal
             bot_service = ChannelBotService(session=session)
             

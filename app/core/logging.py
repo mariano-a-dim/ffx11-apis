@@ -43,11 +43,11 @@ def get_log_level() -> int:
     Obtiene el nivel de logging basado en el ambiente.
     """
     if settings.ENVIRONMENT == "local":
-        return logging.INFO  # Cambiado de DEBUG a INFO para ver logs de Slack
+        return logging.DEBUG
     elif settings.ENVIRONMENT == "staging":
-        return logging.INFO
+        return logging.DEBUG
     else:  # production
-        return logging.WARNING
+        return logging.DEBUG
 
 
 def get_logger(name: str) -> structlog.stdlib.BoundLogger:

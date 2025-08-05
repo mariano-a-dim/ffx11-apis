@@ -20,3 +20,40 @@
 4. Agrega los scopes necesarios:
    - `users:read`
    - `chat:write`
+
+
+## Arquitectura drivers y restricciones
+
+- El Sistema escala a millones de mensajes/ usuarios/ canales.
+- El sistema responde rapido a las consultas directas
+- El sistemas es serverless, aca hay una cuestion de costos clave, ya que no voy a pagar por el no uso
+- El sistema esta orientado a eventos y es multi stack
+- Inicialmente voy a usar tecnologia cloud no aws, no azure, no gcp; no auto-hosting
+
+
+
+## Stack inicial
+
+Arquitectura mínima en Railway (2 servicios + 2 add‑ons)
+API (FastAPI)
+
+Recibe /slack/events (webhook).
+
+Valida firma, normaliza y persiste en Postgres (ACID).
+
+Outbox pattern en la misma TX y publica a Redis Streams (events) para no bloquear.
+
+Worker (Dramatiq/Arq/RQ, Python)
+
+Consume events y ejecuta steps: embedding, topic, fragment, bot_decision, post_to_slack.
+
+Es stateless; escala horizontal por concurrencia.
+
+Add‑ons Railway
+
+Postgres con pgvector (embeddings + HNSW), partición por workspace_id.
+
+Redis (Upstash) para Streams, dedupe, rate‑limit y cache.
+
+Opcional: Railway Cron pegando a un endpoint del Worker (snapshots/resúmenes).
+Todo queda en Railway (una sola nube).

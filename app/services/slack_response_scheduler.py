@@ -41,7 +41,7 @@ class SlackResponseScheduler(LoggerMixin):
                 delay_seconds = settings.RESPONSE_DELAY_LOW
             
             # Calcular tiempo de envío
-            send_time = datetime.now() + timedelta(seconds=delay_seconds)
+            send_time = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
             
             self.logger.info("📅 Scheduling Slack response", 
                            urgency_level=urgency_level,
@@ -77,7 +77,7 @@ class SlackResponseScheduler(LoggerMixin):
                 delay_seconds = settings.RESPONSE_DELAY_TEST
             
             # Calcular tiempo de envío
-            send_time = datetime.now() + timedelta(seconds=delay_seconds)
+            send_time = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
             
             self.logger.info("🧪 Scheduling test response", 
                            delay_seconds=delay_seconds,
@@ -109,7 +109,7 @@ class SlackResponseScheduler(LoggerMixin):
             delay_seconds = settings.RESPONSE_DELAY_LOCO  # Delay configurado para "loco"
             
             # Calcular tiempo de envío
-            send_time = datetime.now() + timedelta(seconds=delay_seconds)
+            send_time = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
             
             self.logger.info("🎯 Scheduling 'loco' response", 
                            delay_seconds=delay_seconds,

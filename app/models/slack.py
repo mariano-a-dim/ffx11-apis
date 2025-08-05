@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from sqlmodel import Field, SQLModel
 from sqlalchemy import JSON, Column
@@ -44,9 +44,9 @@ class SlackMessageUpdate(SQLModel):
 
 class SlackMessage(SlackMessageBase, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
-    is_ai_response: bool | None = Field(default=False, nullable=True)  # Temporalmente nullable
-
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    is_ai_response: bool | None = Field(default=False, nullable=True)
+    
 
 class SlackMessagePublic(SlackMessageBase):
     id: uuid.UUID

@@ -8,9 +8,11 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.ai_service import AIService
 from app.models.channel_specialist import ChannelSpecialist, ChannelSpecialistCreate
+# Guardar el mensaje en la base de datos
+from app.crud.slack_message import create_slack_message
+from app.models.slack import SlackMessageCreate
 
 logger = get_logger(__name__)
-
 
 class ChannelBotService:
     """
@@ -54,29 +56,34 @@ class ChannelBotService:
                        channel_id=channel_id,
                        user_id=user_id,
                        text_length=len(text))
-            
-            # Obtener especialistas configurados para este canal
-            specialists = await self.get_channel_specialists(channel_id)
-            if not specialists:
-                logger.info("No specialists configured for channel", channel_id=channel_id)
-                return
-            
-            # Analizar el mensaje para determinar qué especialista debe responder
-            relevant_specialist = await self.select_relevant_specialist(text, specialists)
-            if not relevant_specialist:
-                logger.info("No relevant specialist found for message", channel_id=channel_id)
-                return
-            
-            # Generar respuesta del especialista
-            response = await self.generate_specialist_response(
-                text, relevant_specialist, channel_id, user_id
+
+            slack_message = SlackMessageCreate(
+                slack_message_id=event.get("client_msg_id") or event.get("ts"),
+                team_id=event.get("team") or "unknown",
+                channel_id=event.get("channel"),
+                channel_name=None,
+                user_id=event.get("user"),
+                user_name=None,
+                text=event.get("text", ""),
+                message_type=event.get("type", "message"),
+                subtype=event.get("subtype"),
+                timestamp=event.get("ts"),
+                thread_ts=event.get("thread_ts"),
+                parent_user_id=event.get("parent_user_id"),
+                client_msg_id=event.get("client_msg_id"),
+                is_bot=bool(event.get("bot_id")),
+                files=event.get("files", []),
+                blocks=event.get("blocks", []),
+                reactions=event.get("reactions", []),
+                edited=event.get("edited"),
+                reply_count=event.get("reply_count"),
+                reply_users_count=event.get("reply_users_count"),
+                latest_reply=event.get("latest_reply"),
+                subscribed=event.get("subscribed"),
+                raw_event=event
             )
-            
-            if response:
-                await self.send_channel_message(channel_id, response, relevant_specialist.name)
-                # Marcar que ya respondimos a este mensaje
-                await self._mark_as_responded(channel_id, message_id)
-            
+            create_slack_message(session=self.session, slack_message_in=slack_message)
+                    
         except Exception as e:
             logger.error(f"Error handling channel message: {e}")
     
@@ -391,4 +398,43 @@ class ChannelBotService:
                        message_id=message_id)
             
         except Exception as e:
-            logger.error(f"Error marking message as responded: {e}") 
+            logger.error(f"Error marking message as responded: {e}")
+    
+    async def handle_request(self, request: Dict[str, Any]) -> None:
+        """
+        Maneja una solicitud entrante de Slack.
+        """
+        try:
+            logger.info("Received request", request=request)
+            
+            # Verificar tipo de evento
+            event_type = request.get("event", {}).get("type")
+            
+            if event_type == "message":
+                await self.handle_channel_message(request["event"])
+            elif event_type == "app_mention":
+                await self.handle_app_mention(request["event"])
+            else:
+                logger.info("Unhandled event type", event_type=event_type)
+        
+        except Exception as e:
+            logger.error(f"Error handling request: {e}")
+    
+    async def retry_handler(self, request: Dict[str, Any]) -> None:
+        """
+        Maneja reintentos de entrega de Slack.
+        """
+        try:
+            logger.info("Received retry request", request=request)
+            
+            # Obtener número de reintento
+            retry_num = request.headers.get("X-Slack-Retry-Num")
+            if retry_num is not None and int(retry_num) > 1:
+                logger.info("Slack retry detected, skipping processing", retry_num=retry_num)
+                return
+            
+            # Procesar normalmente
+            await self.handle_request(request)
+        
+        except Exception as e:
+            logger.error(f"Error in retry handler: {e}")
